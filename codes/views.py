@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, jsonify ,request, redirect, url_for, flash
-from flask_security import roles_required
+from flask_security import roles_required, login_required, current_user
+from flask_jwt_extended import create_access_token
 from codes.models import Section, Book, db
 
 views = Blueprint('views', __name__)
@@ -8,12 +9,3 @@ views = Blueprint('views', __name__)
 def home():
     return render_template('index.html')  # Serve the index.html of Vue.js app
 
-@views.route('/api/sections', methods=['GET'])
-def get_sections():
-    sections = Section.query.all()
-    return jsonify([section.name for section in sections])
-
-@views.route('/api/books', methods=['GET'])
-def get_books():
-    books = Book.query.all()
-    return jsonify([book.title for book in books])

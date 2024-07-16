@@ -1,28 +1,28 @@
 <template>
   <div id="app">
-    <nav>
-      <router-link to="/">HomePage</router-link>
-      <router-link to="/admin/dashboard">Admin Dashboard</router-link>
-      <router-link to="/admin/section/create">Create Section</router-link>
-      <router-link to="/admin/book/create">Create Book</router-link>
-    </nav>
-    <router-view/>
+    <LoginComponent v-if="!loggedIn" @login-success="handleLoginSuccess" />
+    <DashboardComponent v-if="loggedIn" />
   </div>
 </template>
 
 <script>
-export default {
-  name: 'App'
-}
-</script>
+import LoginComponent from './components/LoginComponent.vue';
+import DashboardComponent from './components/DashboardComponent.vue';
 
-<style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
-}
-</style>
+export default {
+  components: {
+    LoginComponent,
+    DashboardComponent
+  },
+  data() {
+    return {
+      loggedIn: false
+    };
+  },
+  methods: {
+    handleLoginSuccess() {
+      this.loggedIn = true;
+    }
+  }
+};
+</script>
