@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin, hash_password, roles_required, auth_required
-from flask_security.utils import verify_password
+from werkzeug.security import check_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from flask_cors import CORS
 import datetime
@@ -47,7 +47,7 @@ class User(db.Model, UserMixin):
     email = db.Column(db.String(64), unique=True, nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     fs_uniquifier = db.Column(db.String(255), unique=True, nullable=False)
-    active = db.Column(db.Boolean, default=True)
+    active = db.Column(db.Boolean)
     roles = db.relationship('Role', secondary='roles_users', backref=db.backref('users', lazy='dynamic'))
 
 class Section(db.Model):
@@ -104,12 +104,15 @@ def index():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    user = User.query.filter_by(email=data['email']).first()
-    if user and verify_password(data['password'], user.password):
-        access_token = create_access_token(identity={'email': user.email, 'is_admin': user.is_admin})
-        response_data = {'access_token': access_token,'is_admin': user.is_admin}
-        return jsonify(response_data), 200
-    return jsonify({"msg": "Invalid credentials"}), 401
+    email = data['email']
+    if not email:
+        return jsonify({'message': 'Email is required'}), 400
+    user = datastore.find_user(email=email)
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+    if check_password_hash(user.password, data['password']):
+        return jsonify({"token": user.get_auth_token(), "email": user.email, "roles": user.roles[0].name})
+    return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/admin')
 @roles_required('admin')
