@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
-from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin, hash_password, roles_required, auth_required
+from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin, hash_password, roles_required, auth_required, verify_password
 from flask_jwt_extended import JWTManager, create_access_token
+from flask_cors import CORS
 import datetime
 
 # Configuration
@@ -20,6 +21,7 @@ class DevelopmentConfig(Config):
 
 # Initialize Flask app
 app = Flask(__name__)
+CORS(app)
 app.config.from_object(DevelopmentConfig)
 
 # Initialize database
@@ -95,16 +97,14 @@ with app.app_context():
 def index():
     return render_template('index.html')
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login', methods=['POST'])
 def login():
-    if request.method == 'POST':
-        data = request.json
-        user = User.query.filter_by(email=data['email']).first()
-        if user and user.password == hash_password(data['password']):
-            access_token = create_access_token(identity={'email': user.email, 'roles': [role.name for role in user.roles]})
-            return jsonify(access_token=access_token)
-        return jsonify({"msg": "Invalid credentials"}), 401
-    return render_template('login.html')
+    data = request.json
+    user = User.query.filter_by(email=data['email']).first()
+    if user and verify_password(data['password'], user.password):
+        access_token = create_access_token(identity={'email': user.email, 'roles': [role.name for role in user.roles]})
+        return jsonify(access_token=access_token)
+    return jsonify({"msg": "Invalid credentials"}), 401
 
 @app.route('/admin')
 @roles_required('admin')
