@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
-from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin, hash_password, roles_required, auth_required, verify_password
-from flask_jwt_extended import JWTManager, create_access_token
+from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin, hash_password, roles_required, auth_required
+from flask_security.utils import verify_password
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from flask_cors import CORS
 import datetime
 
@@ -44,8 +45,9 @@ class User(db.Model, UserMixin):
     username = db.Column(db.String, unique=False)
     password = db.Column(db.String(512), nullable=False)
     email = db.Column(db.String(64), unique=True, nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
     fs_uniquifier = db.Column(db.String(255), unique=True, nullable=False)
-    active = db.Column(db.Boolean())
+    active = db.Column(db.Boolean, default=True)
     roles = db.relationship('Role', secondary='roles_users', backref=db.backref('users', lazy='dynamic'))
 
 class Section(db.Model):
@@ -87,9 +89,11 @@ with app.app_context():
     datastore.find_or_create_role(name='user', description='General User')
     db.session.commit()
     if not datastore.find_user(email="admin@email.com"):
-        datastore.create_user(email="admin@email.com", password=hash_password("admin"), roles=['admin'])
+        datastore.create_user(email="admin@email.com", password=hash_password("admin"),is_admin=True, roles=['admin'])
     if not datastore.find_user(email="user1@email.com"):
         datastore.create_user(email="user1@email.com", password=hash_password("user1"), roles=['user'])
+    if not datastore.find_user(email="user2@email.com"):
+        datastore.create_user(email="user2@email.com", password=hash_password("user2"), roles=['user'])   
     db.session.commit()
 
 # Define views
@@ -102,8 +106,9 @@ def login():
     data = request.json
     user = User.query.filter_by(email=data['email']).first()
     if user and verify_password(data['password'], user.password):
-        access_token = create_access_token(identity={'email': user.email, 'roles': [role.name for role in user.roles]})
-        return jsonify(access_token=access_token)
+        access_token = create_access_token(identity={'email': user.email, 'is_admin': user.is_admin})
+        response_data = {'access_token': access_token,'is_admin': user.is_admin}
+        return jsonify(response_data), 200
     return jsonify({"msg": "Invalid credentials"}), 401
 
 @app.route('/admin')
