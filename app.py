@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
-from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin, hash_password, roles_required, auth_required
-from werkzeug.security import check_password_hash
+from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin
+from flask_security.decorators import roles_required, auth_required
+from werkzeug.security import check_password_hash, generate_password_hash
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from flask_cors import CORS
 import datetime
@@ -89,11 +90,11 @@ with app.app_context():
     datastore.find_or_create_role(name='user', description='General User')
     db.session.commit()
     if not datastore.find_user(email="admin@email.com"):
-        datastore.create_user(email="admin@email.com", password=hash_password("admin"),is_admin=True, roles=['admin'])
+        datastore.create_user(username="admin",email="admin@email.com", password=generate_password_hash("admin"),is_admin=True, roles=['admin'])
     if not datastore.find_user(email="user1@email.com"):
-        datastore.create_user(email="user1@email.com", password=hash_password("user1"), roles=['user'])
+        datastore.create_user(username="user1",email="user1@email.com", password=generate_password_hash("user1"), roles=['user'])
     if not datastore.find_user(email="user2@email.com"):
-        datastore.create_user(email="user2@email.com", password=hash_password("user2"), roles=['user'])   
+        datastore.create_user(username="user2",email="user2@email.com", password=generate_password_hash("user2"), roles=['user'])   
     db.session.commit()
 
 # Define views
@@ -101,18 +102,44 @@ with app.app_context():
 def index():
     return render_template('index.html')
 
-@app.route('/login', methods=['POST'])
+@app.route('/user-login', methods=['POST'])
 def login():
     data = request.json
+    if not data or 'email' not in data or 'password' not in data:
+        return jsonify({'message': 'Email and password are required'}), 400
     email = data['email']
-    if not email:
-        return jsonify({'message': 'Email is required'}), 400
+    password = data['password']
     user = datastore.find_user(email=email)
     if not user:
-        return jsonify({'message': 'User not found'}), 404
-    if check_password_hash(user.password, data['password']):
-        return jsonify({"token": user.get_auth_token(), "email": user.email, "roles": user.roles[0].name})
+        return jsonify({'message': 'User not found'}), 404  
+    if check_password_hash(user.password, password):
+        token = user.get_auth_token()
+        roles = user.roles[0].name if user.roles else None
+        return jsonify({"token": token, "email": user.email, "roles": roles}), 200  
     return jsonify({'message': 'Invalid credentials'}), 401
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    if not data or 'username' not in data or 'email' not in data or 'password' not in data:
+        return jsonify({'message': 'Username, email, and password are required'}), 400
+    username = data['username']
+    email = data['email']
+    password = data['password']
+    # Check if user already exists
+    if datastore.find_user(email=email):
+        return jsonify({'message': 'User with this email already exists'}), 409
+    # Hash the password
+    hashed_password = generate_password_hash(password)
+    # Create the user
+    try:
+        user_role = datastore.find_or_create_role(name='user', description='General User')
+        datastore.create_user(username=username, email=email, password=hashed_password, roles=[user_role])
+        db.session.commit()
+        return jsonify({'message': 'User created successfully'}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Error creating user: {str(e)}'}), 500
 
 @app.route('/admin')
 @roles_required('admin')
@@ -121,5 +148,7 @@ def admin():
     return "Admin page"
 
 
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True,port=8000)
