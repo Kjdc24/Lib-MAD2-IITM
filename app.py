@@ -54,8 +54,7 @@ class User(db.Model, UserMixin):
 class Section(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), nullable=False)
-    description = db.Column(db.String(255), nullable=True)
-    date_created = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    date_created = db.Column(db.Date, nullable=False, default=datetime.date.today)
 
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -63,8 +62,7 @@ class Book(db.Model):
     author = db.Column(db.String(64), nullable=False)
     section_id = db.Column(db.Integer, db.ForeignKey('section.id'), nullable=False)
     section = db.relationship('Section', backref=db.backref('books', lazy=True))
-    date_issued = db.Column(db.Date, nullable=True)
-    return_date = db.Column(db.Date, nullable=True)
+    date_added = db.Column(db.Date, nullable=True)
     content = db.Column(db.Text, nullable=True)
 
 class Request(db.Model):
@@ -96,7 +94,7 @@ with app.app_context():
     if not datastore.find_user(email="user2@email.com"):
         datastore.create_user(username="user2",email="user2@email.com", password=generate_password_hash("user2"), roles=['user'])   
     db.session.commit()
-
+    
 # Define views
 @app.route('/')
 def index():
@@ -141,14 +139,85 @@ def register():
         db.session.rollback()
         return jsonify({'message': f'Error creating user: {str(e)}'}), 500
 
-@app.route('/admin')
-@roles_required('admin')
-@auth_required('token')
+@app.route('/admin', methods=['GET'])
 def admin():
-    return "Admin page"
+    sections = Section.query.all()
+    section_data = []
+    for section in sections:
+        section_info = {
+            'id': section.id,
+            'name': section.name,
+            'date_created': section.date_created,
+            'num_books': len(section.books)  # Add the number of books in the section
+        }
+        section_data.append(section_info)
+    return jsonify(section_data)
+
+@app.route('/add-section', methods=['POST'])
+def add_section():
+    data = request.json
+    if not data or 'name' not in data:
+        return jsonify({'message': 'Section name is required'}), 400
+    name = data['name']
+    try:
+        section = Section(name=name)
+        db.session.add(section)
+        db.session.commit()
+        return jsonify({'message': 'Section added successfully'}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Error adding section: {str(e)}'}), 500
+
+@app.route('/edit-section/<int:id>', methods=['POST'])
+def edit_section(id):
+    data = request.json
+    if not data or 'name' not in data:
+        return jsonify({'message': 'Section name is required'}), 400
+    section = Section.query.get(id)
+    if not section:
+        return jsonify({'message': 'Section not found'}), 404
+    try:
+        section.name = data['name']
+        db.session.commit()
+        return jsonify({'message': 'Section updated successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Error updating section: {str(e)}'}), 500
+    
+@app.route('/delete-section/<int:id>', methods=['POST'])
+def delete_section(id):
+    section = Section.query.get(id)
+    if not section:
+        return jsonify({'message': 'Section not found'}), 404
+    try:
+        # Delete all books in the section
+        books = Book.query.filter_by(section_id=id).all()
+        if books:
+            for book in books:
+                db.session.delete(book)
+        # Delete the section
+        db.session.delete(section)
+        db.session.commit()
+        return jsonify({'message': 'Section deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Error deleting section: {str(e)}'}), 500
 
 
-
+@app.route('/view-books/<int:id>', methods=['GET'])
+def books():
+    books = Book.query.filter_by(section_id=id).all()
+    book_data = []
+    for book in books:
+        book_info = {
+            'id': book.id,
+            'title': book.title,
+            'author': book.author,
+            'date_added': book.date_added,
+            'content': book.content
+        }
+        book_data.append(book_info)
+    return jsonify(book_data)
 
 if __name__ == "__main__":
     app.run(debug=True,port=8000)

@@ -35,7 +35,7 @@ export default {
                 if (data.roles.includes('admin')) {
                     this.$router.push('/admin')
                 } else {
-                    this.$router.push('/')
+                    this.$router.push('/user')
                 }
             }
         }
