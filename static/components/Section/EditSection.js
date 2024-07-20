@@ -6,10 +6,10 @@ export default {
                 <h1>Edit Section</h1>
                 <form @submit.prevent="editSection">
                     <div class="form-group">
-                        <label for="name">Section Name</label>
-                        <input type="text" class="form-control" id="name" v-model="section.name">
+                        <label for="name"></label>
+                        <input type="text" class="form-control" id="name" v-model="section.name" placeholder="Section Name">
                     </div>
-                    <button type="submit" class="btn btn-primary">Edit Section</button>
+                    <button type="submit" class="btn btn-primary mt-4">Edit Section</button>
                 </form>
             </div> 
         </div>
