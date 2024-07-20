@@ -443,5 +443,26 @@ def remove_request(request_id):
         return jsonify({'message': 'Request removed'}), 200
     return jsonify({'error': 'Request not found'}), 404
 
+@app.route('/return-book', methods=['POST'])
+def return_book():
+    data = request.get_json()
+    if not data or 'bookId' not in data or 'userId' not in data:
+        return jsonify({'message': 'Missing data'}), 400    
+    book_id = data['bookId']
+    user_id = data['userId']
+    request_entry = Request.query.filter_by(book_id=book_id, user_id=user_id, is_requested=True).first()
+    if not request_entry:
+        return jsonify({'message': 'Request not found'}), 404
+    if not request_entry.is_approved:
+        return jsonify({'message': 'Request not approved'}), 400    
+    try:
+        db.session.delete(request_entry)        
+        db.session.commit()
+        return jsonify({'message': 'Book returned successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Error returning book: {str(e)}'}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True,port=8000)
