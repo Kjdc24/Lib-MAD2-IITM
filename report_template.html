@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monthly Activity Report</title>
+</head>
+<body>
+    <h1>Monthly Activity Report</h1>
+    <p><strong>Report Period:</strong> {{ start_date }} to {{ end_date }}</p>
+    
+    <h2>Sections</h2>
+    <ul>
+    {% for section in sections %}
+        <li>{{ section.name }}</li>
+    {% endfor %}
+    </ul>
+    
+    <h2>Issued Books</h2>
+    <ul>
+    {% for request in issued_books %}
+        <li>{{ request.book.title }} - {{ request.date_requested }}</li>
+    {% endfor %}
+    </ul>
+    
+    <h2>Return Dates</h2>
+    <ul>
+    {% for request in return_dates %}
+        <li>{{ request.book.title }} - {{ request.date_return }}</li>
+    {% endfor %}
+    </ul>
+    
+</body>
+</html>

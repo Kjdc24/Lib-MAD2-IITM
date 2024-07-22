@@ -7,7 +7,7 @@ export default {
                 <p class="mb-0">View Sections</p>
                 <button class="btn btn-dark" @click="addSection" style="font-size:7px;">
                     <i class="fas fa-plus"></i>
-                </button>
+                </button> 
             </div><div>
         <table class="table" >
             <thead>
@@ -41,7 +41,8 @@ export default {
                 </tr>
             </tbody>
         </table>
-    </div> </div>
+    </div> 
+        </div>
     </div>`,
     data() {
         return {
@@ -85,6 +86,6 @@ export default {
         },
         viewSection(section) {
             this.$router.push(`/view-books/${section.id}`);
-        }
+        },
     }
 };

@@ -5,6 +5,12 @@ export default {
     <div v-else>
       <div class="mb-3 p-5 text-center bg-light" style="border-radius: 10px;">
         <h1 class="text-center mb-4">All Requests</h1>
+          <div class="d-flex justify-content-between align-items-center mb-4 mt-5">
+            <h5 class="text-center">Download Requests Data</h5>
+            <button class="btn btn-dark" @click="exportRequests" style="font-size:7px;">
+              <i class="fas fa-arrow-down"></i>
+            </button> 
+          </div>
         <table class="table">
           <thead>
             <tr>
@@ -114,6 +120,24 @@ export default {
     formatDate(dateString) {
       const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
       return new Date(dateString).toLocaleDateString(undefined, options);
+    },
+    async exportRequests() {
+      try {
+        const response = await fetch('/export-all-requests  ', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        if (response.ok) {
+          alert('Export request received. You will receive an email once the export is complete.');
+        } else {
+          console.error('Failed to export requests:', response.statusText);
+        }
+      } catch (error) {
+        console.error('Error exporting requests:', error);
+      }
     }
   }
 };
