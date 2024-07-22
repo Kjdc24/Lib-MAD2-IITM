@@ -26,7 +26,7 @@ export default {
     methods: {
         async change() {
             try {
-                const res = await fetch('/user-change', {
+                const res = await fetch('/user-profile', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -34,6 +34,7 @@ export default {
                     body: JSON.stringify(this.cred),
                 })
                 if (res.ok) {
+                    alert('Profile changed successfully');
                     this.$router.push('/user')
                 }
             } catch (error) {

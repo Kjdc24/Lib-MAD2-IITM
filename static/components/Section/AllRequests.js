@@ -1,5 +1,5 @@
 export default {
-    template: `
+  template: `
   <div class="container mt-5">
     <div v-if="loading" class="text-center">Loading...</div>
     <div v-else>
@@ -7,7 +7,7 @@ export default {
         <h1 class="text-center mb-4">All Requests</h1>
           <div class="d-flex justify-content-between align-items-center mb-4 mt-5">
             <h5 class="text-center">Download Requests Data</h5>
-            <button class="btn btn-dark" @click="exportRequests" style="font-size:7px;">
+            <button class="btn btn-dark" @click="downloadRequests" style="font-size:7px;">
               <i class="fas fa-arrow-down"></i>
             </button> 
           </div>
@@ -51,7 +51,8 @@ export default {
   data() {
     return {
       requests: [],
-      loading: true
+      loading: true,
+      message: ''  // Add a message property for user feedback
     };
   },
   async created() {
@@ -121,22 +122,18 @@ export default {
       const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
       return new Date(dateString).toLocaleDateString(undefined, options);
     },
-    async exportRequests() {
+    async downloadRequests() {
       try {
-        const response = await fetch('/export-all-requests  ', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
-          }
-        });
+        const response = await fetch('/download-csv');
+        const data = await response.json();
         if (response.ok) {
-          alert('Export request received. You will receive an email once the export is complete.');
+          this.message = 'The CSV file has been sent to your email.';
         } else {
-          console.error('Failed to export requests:', response.statusText);
+          this.message = 'Failed to initiate CSV export.';
         }
       } catch (error) {
-        console.error('Error exporting requests:', error);
+        console.error('Error downloading requests:', error);
+        this.message = 'An error occurred while requesting the CSV export.';
       }
     }
   }

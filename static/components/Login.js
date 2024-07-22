@@ -1,6 +1,6 @@
 export default {
     template: `
-    <div class="d-flex justify-content-center" style="margin-top: 20vh">
+    <div class="d-flex justify-content-center" style="margin-top: 10vh">
     <div class="mb-3 p-5 text-center bg-light" style="border-radius: 10px;">
         <h1>Login Page</h1>
         <label for="email" class="form-label mt-4">Email: </label>
@@ -39,6 +39,9 @@ export default {
                 } else {
                     this.$router.push('/user')
                 }
+            } else {
+                const error = await res.json();
+                alert('Login failed: ' + error.message);
             }
         }
     }

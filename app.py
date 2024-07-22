@@ -1,19 +1,22 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, render_template_string
 from flask_sqlalchemy import SQLAlchemy
 from flask_security import Security, SQLAlchemyUserDatastore, UserMixin, RoleMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
-import csv
-import io
+import flask_excel as excel
+import pandas as pd
 import datetime
 from flask_caching import Cache
-from jinja2 import Template
-from celery import Celery, Task, shared_task
-import smtplib
+from celery import Celery, Task
+from celery.result import AsyncResult
+from celery.schedules import crontab
+from smtplib import SMTP
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
+from email import encoders
+from io import BytesIO
 
 # Configuration classes
 class Config(object):
@@ -54,6 +57,7 @@ app.config.from_object(DevelopmentConfig)
 
 db = SQLAlchemy(app) # Initialize database
 cache = Cache(app) # Initialize cache
+excel.init_excel(app) # Initialize excel
 
 class FlaskTask(Task):
     def __call__(self, *args: object, **kwargs: object) -> object:
@@ -184,17 +188,18 @@ def index():
 def login():
     data = request.json
     if not data or 'email' not in data or 'password' not in data:
-        return jsonify({'message': 'Email and password are required'}), 400
+        return jsonify({'message': 'Email and password are required'}), 400    
     email = data['email']
     password = data['password']
-    user = datastore.find_user(email=email)
+    user = datastore.find_user(email=email) 
     if not user:
         return jsonify({'message': 'User not found'}), 404  
     if check_password_hash(user.password, password):
         token = user.get_auth_token()
-        roles = user.roles[0].name if user.roles else None
-        id = user.id
-        return jsonify({"token": token, "email": user.email, "roles": roles, "id": id}), 200  
+        roles = [role.name for role in user.roles] if user.roles else []
+        user_id = user.id
+        return jsonify({"token": token, "email": user.email, "roles": roles, "id": user_id}), 200
+    
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/register', methods=['POST'])
@@ -221,7 +226,6 @@ def register():
         return jsonify({'message': f'Error creating user: {str(e)}'}), 500
 
 @app.route('/admin', methods=['GET'])
-@cache.cached(timeout=60)
 def admin():
     sections = Section.query.all()
     section_data = []
@@ -358,6 +362,7 @@ def delete_book(id):
         return jsonify({'message': f'Error deleting book: {str(e)}'}), 500
 
 @app.route('/user', methods=['GET'])
+@cache.cached(timeout=60)
 def user():
     user_id = request.args.get('userId')  # Get the userId from the query parameters
     if not user_id:
@@ -377,7 +382,7 @@ def user():
         book_data.append(book_info) 
     return jsonify(book_data)
 
-@app.route('/user-profile', methods=['GET'])
+@app.route('/user-profile', methods=['POST'])
 def user_profile():
     data = request.json
     if not data or 'userId' not in data:
@@ -509,15 +514,154 @@ def return_book():
         db.session.rollback()
         return jsonify({'message': f'Error returning book: {str(e)}'}), 500
 
-@celery_app.task(name="worker.say_hello")
-def say_hello():
-    print("Hello, World!")
+@celery_app.task(name="worker.create_request_csv")
+def create_request_csv():
+    request_data = db.session.query(Request, Book).join(Book, Request.book_id == Book.id).all()
+    data = [
+        {
+            "Name": book.title,
+            "Content": book.content,
+            "Author(s)": book.author,
+            "Date Issued": req.date_requested,
+            "Date Returned": req.date_return if req.date_return else ''
+        }
+        for req, book in request_data
+    ]
+    # Convert the list of dictionaries to a DataFrame
+    df = pd.DataFrame(data)
+    output = BytesIO()
+    df.to_csv(output, index=False)
+    output.seek(0)
+    send_file_message(
+        to="recipient@example.com",  # Replace with actual recipient email
+        subject="Requested CSV File",
+        content_body="Attached is the CSV file you requested.",
+        attachment_content=output.getvalue(),
+        attachment_filename="requests.csv"
+    )
+    return 'CSV file sent via email'
 
-@app.route('/say_hello')
-def say_hello_view():
-    result = say_hello.delay()
-    return jsonify({'task_id': result.id}), 200
+# Function to send an email with an optional attachment
+def send_file_message(to, subject, content_body, attachment_content=None, attachment_filename=None):
+    msg = MIMEMultipart()
+    msg["to"] = to
+    msg["subject"] = subject
+    msg["from"] = app.config['SENDER_EMAIL']
+    
+    # Attach the email body
+    msg.attach(MIMEText(content_body, 'html'))
+    
+    # Attach the file if provided
+    if attachment_content and attachment_filename:
+        attachment = MIMEBase('application', 'octet-stream')
+        attachment.set_payload(attachment_content)
+        encoders.encode_base64(attachment)
+        attachment.add_header(
+            'Content-Disposition',
+            f'attachment; filename={attachment_filename}',
+        )
+        msg.attach(attachment)
+    
+    # Send the email
+    with SMTP(host=app.config['SMTP_HOST'], port=app.config['SMTP_PORT']) as server:
+        server.send_message(msg)
 
+# Flask routes
+@app.route('/download-csv')
+def download_csv():
+    res = create_request_csv.delay()
+    return jsonify({'task_id': res.id}), 200
+
+@app.route('/get-csv/<task_id>')
+def get_csv(task_id):
+    res = AsyncResult(task_id)
+    if res.ready():
+        return jsonify({'message': 'Task completed, check your email for the CSV file'}), 200
+    else:
+        return jsonify({'message': 'Task not ready'}), 202
+    
+@celery_app.task(name="worker.daily_remainder")
+def daily_remainder():
+    today = datetime.datetime.now().date()
+    reminder_threshold = datetime.timedelta(days=3)  # Return date is within the next 3 days
+    # Query to get users with return dates approaching or have not visited
+    requests_due = db.session.query(Request).filter(Request.date_return <= today + reminder_threshold,
+        Request.is_approved == True,Request.date_requested.isnot(None)).all()
+    # Fetch unique users from the requests
+    user_ids = {req.user_id for req in requests_due}
+    users = db.session.query(User).filter(User.id.in_(user_ids)).all()
+    for user in users:
+        user_requests = [req for req in requests_due if req.user_id == user.id]
+        for req in user_requests:
+            # Example email content
+            subject = "Reminder: Return Your Library Book"
+            content = (f"""<html><body>
+                        <p>Dear {user.username},</p>
+                        <p>This is a reminder to return your library book:</p>
+                        <ul><li><strong>Book Title:</strong> {req.book.title}</li>
+                        <li><strong>Return Date:</strong> {req.date_return}</li></ul>
+                        <p>Please visit the library or update your request status.</p>
+                        <p>Thank you!</p></body></html>""")
+            # Send email reminder
+            send_message(user.email, subject, content)
+
+@celery_app.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(crontab(hour=22, minute=10),daily_remainder.s())    
+
+def send_message(to, subject, content_body):
+    msg = MIMEMultipart()
+    msg["to"] = to
+    msg["subject"] = subject
+    msg["from"] = app.config['SENDER_EMAIL']
+    msg.attach(MIMEText(content_body, 'html'))
+    server = SMTP(host=app.config['SMTP_HOST'], port=app.config['SMTP_PORT'])
+    server.send_message(msg=msg)
+    server.quit()
+
+@celery_app.task(name="worker.monthly_activity_report")
+def monthly_activity_report():
+    today = datetime.datetime.now().date()
+    first_day_of_month = today.replace(day=1)
+    last_month = first_day_of_month - datetime.timedelta(days=1)
+    first_day_last_month = last_month.replace(day=1)
+    # Fetch activity data
+    issued_books = db.session.query(Book, Request).join(Request).filter(
+        Request.date_requested >= first_day_last_month,
+        Request.date_requested <= last_month,Request.is_approved == True).all()
+    sections = db.session.query(Section).all()
+    # Generate HTML report
+    html_content = render_template_string("""
+    <html>
+    <body>
+        <h1>Monthly Activity Report</h1>
+        <h2>Books Issued</h2>
+        <table border="1">
+            <tr>
+                <th>Book Title</th>
+                <th>Author</th>
+                <th>Date Issued</th>
+            </tr>
+            {% for book, request in issued_books %}
+            <tr>
+                <td>{{ book.title }}</td>
+                <td>{{ book.author }}</td>
+                <td>{{ request.date_requested }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </body>
+    </html>
+    """, issued_books=issued_books, sections=sections)
+    # Send email with the HTML report
+    subject = "Monthly Activity Report"
+    send_message('admin@email.com', subject, html_content)
+
+@celery_app.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(
+        crontab(day_of_month=1, hour=0, minute=0),  # Runs at midnight on the first day of every month
+        monthly_activity_report.s())
 
 
 if __name__ == "__main__":

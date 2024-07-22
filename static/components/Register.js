@@ -1,6 +1,6 @@
 export default {
     template: `
-    <div class="d-flex justify-content-center" style="margin-top: 20vh">
+    <div class="d-flex justify-content-center" style="margin-top: 5vh">
         <div class="mb-3 p-5 text-center bg-light" style="border-radius: 10px;">
             <h1>Register Page</h1>
             <label for="username" class="form-label mt-4">User Name: </label>
@@ -34,8 +34,8 @@ export default {
                 body: JSON.stringify(this.newdetails)
             })
             if (res.ok) {
-                const data = await res.json()
-                console.log(data)
+                alert('Registered successfully! Redirecting to login...');
+                this.$router.push('/login');
             } else {
                 const error = await res.json()
                 console.error('Error:', error)
